@@ -40,6 +40,12 @@
 2. **独占模式与「转码推流」「在线匹配/DLNA」互斥**：独占开启时转码开关被强制关闭（设计如此，bit-perfect 优先）。
 3. debug 包尚未签名 release；多 DAC 换机压测未完成（ECHO-A、戴灵 G3 已过；脚本就绪等硬件）。
 
+### 📱 平台说明（重要）
+
+- USB 音频独占 = **Android APK**（arm64，标准 Android USB Host API）。本仓库 Release 的 3 个附件均为 Android debug 包（`com.feiniu.music`）。
+- **没有鸿蒙原生版本**：纯血鸿蒙（HarmonyOS NEXT / 5+）无法安装 APK，USB 独占不可用；AOSP 架构的鸿蒙 4.x 理论可装但**未经本仓库验证**。
+- 下文上游 README 中的「鸿蒙 / iQOO / VIVO 音乐兼容包」章节为**原作者原文**：那仍是 Android APK（仅换 `com.luna.music` 包名解决播控问题），与 USB 独占无关，本仓库**未构建也未验证**该兼容包。
+
 ### 💬 欢迎反馈
 
 - **遇到 bug 请开 Issue**（请用「Bug 反馈」模板，附机型 / Android 版本 / DAC 型号 / logcat 的 `UsbUacOutput`、`UsbDeviceFinder` 标签日志）。
