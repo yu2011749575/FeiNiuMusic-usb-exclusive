@@ -1,0 +1,314 @@
+name: build-release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 同一分支出现新提交时自动取消仍在跑的旧构建，避免挤占 runner 和产物混乱
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # flutter/flutter 全量 clone 需超长路径支持：仓库最深约 200 字符，
+      # 叠加 hostedtoolcache 前缀会超 Windows 260 字符限制导致 checkout 失败。
+      # 同时以普通文件对待仓库内的 symlink（Windows 无开发者模式时按真链接
+      # checkout 会同样报 "unable to checkout working tree"）。
+      - name: 启用 Windows 超长路径（flutter SDK clone 需要）
+        shell: powershell
+        run: |
+          git config --global core.longpaths true
+          git config --global core.symlinks false
+      - uses: subosito/flutter-action@v2
+        with:
+          # main 分支预览版：含 #191538 修复（macOS Intel 整窗闪烁）。
+          # 锁定到已验证 commit，避免 main 持续滚动导致 CI 漂移；
+          # 后续升级只需把 flutter-version 改为新的已验证 commit。
+          channel: main
+          flutter-version: c97838627ff5c275e9788839d427ab03eb1dfa01
+          cache: true
+      - name: 提取版本号
+        shell: powershell
+        run: |
+          $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$' | Select-Object -First 1
+          $full = $line.Matches[0].Groups[1].Value.Trim()
+          $ver = $full.Split('+')[0]
+          echo "VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: 构建并打包 Windows 绿色版
+        shell: powershell
+        run: .\scripts\package_windows.ps1 -Build
+      - name: 拷贝 zip 到工作区根目录（避免 upload-artifact 保留目录前缀）
+        shell: powershell
+        run: |
+          Copy-Item -Path build/installer/FeiNiuMusic-v*-Windows.zip -Destination . -Force
+      - name: 上传 Windows 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            FeiNiuMusic-v*-Windows.zip
+            pubspec.yaml
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          # main 分支预览版：含 #191538 修复（macOS Intel 整窗闪烁）。
+          # 锁定到已验证 commit，避免 main 持续滚动导致 CI 漂移；
+          # 后续升级只需把 flutter-version 改为新的已验证 commit。
+          channel: main
+          flutter-version: c97838627ff5c275e9788839d427ab03eb1dfa01
+          cache: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: |
+          if [ -z "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 is missing"
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      - run: flutter pub get
+      # main 分支构建不会自动补齐 32 位 android-arm 引擎产物，而 media_cast_dlna
+      # 插件 build.gradle 硬编码引用 bin/cache/artifacts/engine/android-arm/flutter.jar
+      # 作编译期依赖，缺失即报 "File/directory does not exist"。precache 显式预下载全部
+      # Android 引擎产物（含 arm32/arm64/x64）后再构建。
+      - run: flutter precache --android
+      - run: |
+          FULL_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          VERSION=${FULL_VERSION%%+*}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      # 1) 正式包：默认包名 com.feiniu.music，三个 CPU 架构全部保留
+      - run: flutter build apk --release --split-per-abi
+        env:
+          SIGNING_STORE_FILE: release.keystore
+          SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - run: |
+          mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+             FeiNiuMusic-v${VERSION}-Android-arm64-v8a.apk
+          mv build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+             FeiNiuMusic-v${VERSION}-Android-armeabi-v7a.apk
+          mv build/app/outputs/flutter-apk/app-x86_64-release.apk \
+             FeiNiuMusic-v${VERSION}-Android-x86_64.apk
+      # 2) 汽水音乐兼容包（非官方）：applicationId 覆盖为 com.luna.music，仅 arm64。
+      #    用于鸿蒙 4/6、iQOO、VIVO 的播控中心显示汽水音乐控制（见 README 声明）。
+      #    media_kit 媒体库（否则包体会大 ~13MB）。
+      - run: flutter build apk --release --split-per-abi --target-platform android-arm64 --android-project-arg applicationIdOverride=com.luna.music
+        env:
+          SIGNING_STORE_FILE: release.keystore
+          SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - run: |
+          mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+             FeiNiuMusic-v${VERSION}-Android-z-luna-arm64-v8a.apk
+      # 3) 配套服务端增强应用 FPK：从 FnMusicEnhance 仓库拉取最新 release 产物。
+      #    配套仓库尚无 release 时跳过（后续发布自然附带）。
+      - name: Download companion FPK
+        run: |
+          echo "从 FnMusicEnhance 拉取最新 release 的 fpk ..."
+          # 用 GitHub API 获取最新 release 资产 URL（仓库公开即可，无需 token）
+          ASSETS_JSON=$(curl -s \
+            https://api.github.com/repos/kuilei0926/FnMusicEnhance/releases/latest)
+          # 提取 fpk 资产下载地址（jq 不在则用 grep/sed 兜底）
+          FPK_URL=$(echo "$ASSETS_JSON" | jq -r '.assets[]?.browser_download_url | select(test("\\.fpk$"))' 2>/dev/null | head -n1)
+          if [ -z "$FPK_URL" ]; then
+            FPK_URL=$(echo "$ASSETS_JSON" \
+              | grep -o '"browser_download_url": *"[^"]*\.fpk"' \
+              | head -n1 | sed 's/.*: *"//; s/"$//')
+          fi
+          if [ -z "$FPK_URL" ]; then
+            echo "未找到 FnMusicEnhance 的 fpk release 产物，跳过配套应用"
+            exit 0
+          fi
+          # 保留配套 release 的原始文件名（含配套自身版本号，而非本 App 版本）
+          FPK_NAME=$(basename "$FPK_URL")
+          if [ -z "$FPK_NAME" ] || [ "${FPK_NAME%.fpk}" = "$FPK_NAME" ]; then
+            FPK_NAME="FnMusicEnhance-${VERSION}.fpk"
+          fi
+          echo "下载: $FPK_URL"
+          echo "保存为: $FPK_NAME"
+          curl -sL -o "$FPK_NAME" "$FPK_URL"
+          ls -la "$FPK_NAME"
+      - name: 上传 Android 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: |
+            FeiNiuMusic-v*.apk
+            FnMusicEnhance-*.fpk
+            pubspec.yaml
+
+  # macOS：随 release 发布（绿色版 zip，内含 飞牛音乐.app）。
+  # 未做签名公证，用户首次打开需 右键 → 打开 绕过 Gatekeeper。
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          # main 分支预览版：含 #191538 修复（macOS Intel 整窗闪烁）。
+          # 锁定到已验证 commit，避免 main 持续滚动导致 CI 漂移；
+          # 后续升级只需把 flutter-version 改为新的已验证 commit。
+          channel: main
+          flutter-version: c97838627ff5c275e9788839d427ab03eb1dfa01
+          cache: true
+      - name: 提取版本号
+        shell: bash
+        run: |
+          FULL_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          VERSION=${FULL_VERSION%%+*}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      - name: 构建并打包 macOS（dmg + zip）
+        shell: bash
+        run: |
+          flutter pub get
+          flutter build macos --release
+          cd build/macos/Build/Products/Release
+          # 1) 绿色版 zip（便携，免安装；ditto 保留 .app 内符号链接）
+          ditto -c -k --sequesterRsrc --keepParent "飞牛音乐.app" \
+            "${GITHUB_WORKSPACE}/FeiNiuMusic-v${VERSION}-MacOS.zip"
+          # 2) 安装版 dmg（标准分发格式：挂载后拖入"应用程序"）
+          STAGE="${GITHUB_WORKSPACE}/dmg-stage"
+          rm -rf "$STAGE" && mkdir -p "$STAGE"
+          cp -R "飞牛音乐.app" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "FeiNiuMusic" -srcfolder "$STAGE" \
+            -ov -format UDZO \
+            "${GITHUB_WORKSPACE}/FeiNiuMusic-v${VERSION}-MacOS.dmg"
+      - name: 上传 macOS 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: |
+            FeiNiuMusic-v*-MacOS.zip
+            FeiNiuMusic-v*-MacOS.dmg
+            pubspec.yaml
+
+  # iOS：未签名 .ipa，供用户下载后自行签名安装（Sideloadly / AltStore /
+  # Xcode 免费账号等，7 天过期需重签）。未配置 Apple 开发者签名，
+  # 故不参与发布门槛：构建失败不影响其他平台发布。
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          # main 分支预览版：含 #191538 修复（macOS Intel 整窗闪烁）。
+          # 锁定到已验证 commit，避免 main 持续滚动导致 CI 漂移；
+          # 后续升级只需把 flutter-version 改为新的已验证 commit。
+          channel: main
+          flutter-version: c97838627ff5c275e9788839d427ab03eb1dfa01
+          cache: true
+      - name: 提取版本号
+        shell: bash
+        run: |
+          FULL_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          VERSION=${FULL_VERSION%%+*}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      - name: 构建未签名 iOS 应用（.ipa 供自行签名）
+        shell: bash
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign
+          # 手工组装 .ipa（Payload 结构）。未签名无内置描述文件，
+          # 由签名工具（Sideloadly/AltStore 等）注入免费开发者签名。
+          STAGE="${GITHUB_WORKSPACE}/ipa-stage"
+          rm -rf "$STAGE" && mkdir -p "$STAGE/Payload"
+          cp -R build/ios/iphoneos/Runner.app "$STAGE/Payload/"
+          cd "$STAGE"
+          ditto -c -k --sequesterRsrc --keepParent Payload \
+            "${GITHUB_WORKSPACE}/FeiNiuMusic-v${VERSION}-iOS-unsigned.ipa"
+      - name: 上传 iOS 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: FeiNiuMusic-v*-iOS-unsigned.ipa
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-android, build-macos]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 提取版本号
+        run: |
+          FULL_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          VERSION=${FULL_VERSION%%+*}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      - name: 生成 release 说明
+        run: |
+          git log -1 --pretty=format:"- %s%n%b" > release_notes.txt
+          if [ ! -s release_notes.txt ]; then
+            echo "- ${GITHUB_SHA}" > release_notes.txt
+          fi
+      - name: 追加平台使用说明
+        run: |
+          cat >> release_notes.txt <<'EOF'
+
+          ---
+          **安装说明**
+          - **macOS**：打开 dmg 把 飞牛音乐.app 拖入"应用程序"，或解压 zip 后直接运行。
+            未签名应用首次打开需 右键 → 打开 确认。
+          - **iOS（未签名 ipa）**：需自行签名安装，可用 Sideloadly / AltStore / Xcode
+            免费账号（免费签名 7 天过期需重新安装）。
+          EOF
+      - name: 下载 Windows 产物
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: windows-artifact/
+      - name: 下载 Android 产物
+        uses: actions/download-artifact@v4
+        with:
+          name: android-build
+          path: android-artifact/
+      - name: 下载 macOS 产物
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: macos-artifact/
+      - name: 下载 iOS 产物
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-build
+          path: ios-artifact/
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          body_path: release_notes.txt
+          files: |
+            android-artifact/FeiNiuMusic-v*.apk
+            android-artifact/FnMusicEnhance-*.fpk
+            windows-artifact/FeiNiuMusic-v*-Windows.zip
+            macos-artifact/FeiNiuMusic-v*-MacOS.dmg
+            macos-artifact/FeiNiuMusic-v*-MacOS.zip
+            ios-artifact/FeiNiuMusic-v*-iOS-unsigned.ipa

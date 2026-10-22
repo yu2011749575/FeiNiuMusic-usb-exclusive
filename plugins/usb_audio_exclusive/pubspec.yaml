@@ -1,0 +1,20 @@
+name: usb_audio_exclusive
+description: >-
+  USB DAC 音频独占（bit-perfect）输出插件：用户态 UAC1/UAC2 驱动
+  （usbdevfs 等时传输直捅 DAC，绕过 AudioFlinger/ALSA/snd-usb-audio），
+  附带 MediaCodec 解码→PCM 直出管线；无 USB DAC 时回退 AudioTrack 直通。
+version: 0.1.0
+environment:
+  sdk: ^3.10.8
+  flutter: ">=3.35.0"
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.feiniu.usb_audio_exclusive
+        pluginClass: UsbAudioExclusivePlugin
+
+dependencies:
+  flutter:
+    sdk: flutter

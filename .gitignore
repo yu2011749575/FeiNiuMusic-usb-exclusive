@@ -1,0 +1,124 @@
+# ============================================================
+# 操作系统 / 编辑器
+# ============================================================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+*.class
+*.log
+*.pyc
+.history
+
+# ============================================================
+# IDE
+# ============================================================
+.idea/
+*.iml
+*.ipr
+*.iws
+.atom/
+.svn/
+.vscode/
+.codegraph
+
+# ============================================================
+# Flutter / Dart
+# ============================================================
+.dart_tool/
+.pub/
+.pub-cache/
+.buildlog/
+.build/
+.dart_toolchain/
+.version
+.flutter-plugins
+.flutter-plugins-dependencies
+**/doc/api/
+**/ios/Flutter/.last_build_id
+/coverage/
+
+# Flutter 构建输出
+/build/
+app.*.symbols
+app.*.map.json
+
+# Flutter 版本管理（FVM）
+.fvm/
+.fvm/flutter_sdk
+
+# ============================================================
+# Android
+# ============================================================
+.gradle/
+.kotlin/
+.cxx/
+local.properties
+key.properties
+**/*.keystore
+**/*.jks
+/android/build/
+
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Gradle wrapper（供 CI 下载，不提交二进制）
+/gradlew
+/gradlew.bat
+gradle-wrapper.jar
+
+# ============================================================
+# iOS / macOS
+# ============================================================
+**/ios/Pods/
+**/macos/Pods/
+.swiftpm/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/GeneratedPluginRegistrant.*
+**/macos/Flutter/GeneratedPluginRegistrant.*
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/macos/Runner/GeneratedPluginRegistrant.*
+
+# ============================================================
+# Windows
+# ============================================================
+**/windows/flutter/generated_plugin_registrant.*
+**/windows/flutter/generated_plugins.cmake
+**/windows/runner/GeneratedPluginRegistrant.*
+
+# ============================================================
+# Web
+# ============================================================
+/web/fonts/
+/web/icons/
+
+# ============================================================
+# Linux
+# ============================================================
+**/linux/flutter/generated_plugin_registrant.*
+**/linux/flutter/generated_plugins.cmake
+**/linux/runner/GeneratedPluginRegistrant.*
+
+# ============================================================
+# 其它
+# ============================================================
+/docs
+migrate_working_dir/
+secrets.*
+.env
+.env.*
+*.env
+
+# 源码打包压缩包
+*.7z
+*.zip
+
+# macOS 构建产物
+dist/
+*.dmg
+macos/Podfile.lock
+*.apk
+# APK 不入库，发布走 GitHub Release

@@ -1,0 +1,8 @@
+# 签名配置示例 — 发布版构建必需
+# 将本文件复制为 key.properties 并填入真实值
+# 切勿将 key.properties 或 release.keystore 提交到版本控制
+
+SIGNING_STORE_FILE=../release.keystore
+SIGNING_STORE_PASSWORD=your_store_password
+SIGNING_KEY_ALIAS=your_key_alias
+SIGNING_KEY_PASSWORD=your_key_password

@@ -1,0 +1,168 @@
+name: feiniu_music
+description: "飞牛音乐客户端"
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.6.7+1
+
+environment:
+  sdk: ^3.10.8
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.8
+  dynamic_color: ^1.7.0
+  shared_preferences: ^2.2.2
+  dio: ^5.4.0
+  crypto: ^3.0.6
+  signals: ^6.3.0
+  signals_flutter: ^6.3.0
+  just_audio: ^0.10.5
+  audio_session: ^0.2.2
+  media_kit: ^1.2.6
+  media_kit_libs_audio: ^1.0.7
+  permission_handler: ^12.0.1
+  photo_manager: ^3.2.0
+  flutter_lyric:
+    path: plugins/flutter_lyric
+  webdav_client: ^1.2.2
+  usb_audio_exclusive:
+    path: plugins/usb_audio_exclusive
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  path_provider: ^2.1.5
+  path_provider_platform_interface: ^2.1.2
+  shelf: ^1.4.1
+  qr_flutter: ^4.1.0
+  file_picker: ^10.3.10
+  image_cropper: ^9.0.0
+  audio_service: ^0.18.18
+  flutter_local_notifications: ^17.2.2
+  lpinyin: ^2.0.3
+  flutter_image_compress: ^2.4.0
+  audio_metadata_reader: ^1.4.2
+  flutter_displaymode: ^0.7.0
+  url_launcher: ^6.3.1
+  skeletonizer: ^2.1.3
+  package_info_plus: ^8.0.2
+  shadcn_flutter: ^0.0.53
+  cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
+  connectivity_plus: ^7.3.1
+  media_cast_dlna: ^0.3.1
+  webview_flutter: ^4.10.0
+  webview_flutter_android: ^4.13.0
+  # Windows 桌面端 sqflite 需走 ffi（系统 winsqlite3.dll）。从 dev 提升为
+  # 正式依赖：仅 Windows 构建/运行时使用，Android 不受影响。
+  sqflite_common_ffi: ^2.4.2
+  liquid_glass_widgets: ^0.30.1
+  tray_manager: ^0.5.3
+  window_manager: ^0.5.2
+  desktop_multi_window: ^0.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+  path_provider_platform_interface: ^2.1.2
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# 让 sqlite3 原生资产走系统库（Windows 的 winsqlite3.dll），避免其构建钩子
+# 从 GitHub 下载预编译二进制（离线/受限网络会失败）。仅影响测试编译——
+# sqlite3 是 sqflite_common_ffi 的传递依赖（dev），不进 app 构建图。
+hooks:
+  user_defines:
+    sqlite3:
+      source: system
+      name_windows: winsqlite3
+
+# The following section is specific to Flutter packages.
+flutter:
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
+  # To add assets to your application, add an assets section, like this:
+  assets:
+    - assets/icon/app_icon.png
+    - assets/icon/app_icon.ico
+    - assets/preview/style_preview_cover.jpg
+    - assets/preview/genre_bg.png
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
+  #
+  # For details regarding fonts from package dependencies,
+  # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+  # iOS 图标不允许带 alpha（透明）通道，否则 App Store 审核会被拒；
+  # 透明区域填充为白色，由 iOS 自行套圆角。
+  remove_alpha_ios: true
+  # macOS 应用图标：从同一张源图生成 AppIcon（16~1024 多尺寸）。
+  # 运行 `dart run flutter_launcher_icons` 生效。
+  macos:
+    generate: true
+  # Windows 桌面图标：从同一张源图生成 app_icon.ico（含 16/32/48/256 多分辨率），
+  # 打包进 exe 作为程序/任务栏图标。运行 `dart run flutter_launcher_icons` 生效。
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    icon_size: 256

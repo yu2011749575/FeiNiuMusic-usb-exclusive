@@ -1,3 +1,285 @@
-# FeiNiuMusic-usb-exclusive
+## ⚠️ 仓库声明（请先阅读）
 
-初始化占位（正式 README 随后覆盖）
+### 📜 关于原作者与版权
+
+- 本仓库是 [kuilei0926/FeiNiuMusic](https://github.com/kuilei0926/FeiNiuMusic)（飞牛 NAS 第三方音乐客户端安卓 App）的**完整代码** + **USB 音频独占（bit-perfect）增强**。
+- FeiNiuMusic 由 **kuilei0926** 开发，深度魔改自 **[Keduoli03/NagoMusic](https://github.com/Keduoli03/NagoMusic)**（NagoMusic 又见于其仓库致谢）。
+- 上游全部代码的**版权均归原作者及各自权利人所有**；本仓库不主张对上游代码的任何所有权。本仓库新增/修改的部分随仓库一并发布，供学习与自用。
+- 其他移植来源（Lyrico [Apache-2.0]、musicdl、HyperLyric、flutter_lyric 等）见本 README 原文末尾的「致谢」章节，请一并阅读。
+
+### 🤖 AI 编写声明
+
+本仓库的 **USB 音频独占功能及周边改动由 AI 编写**（Hermes Agent，由用户指挥，底层为 Nous Research 相关模型）。以下部分为 AI 从零实现：
+
+| 范围 | 内容 |
+| --- | --- |
+| `plugins/usb_audio_exclusive/` | **全部**：用户态 UAC 驱动（Kotlin 插件层 + C++ usbdevfs ISO URB 传输层、协商/解码/采集） |
+| `lib/app/services/player/usb_exclusive_engine.dart` | USB 独占播放引擎（Flutter 侧） |
+| `lib/app/services/usb_exclusive/usb_exclusive_service.dart` | 独占开关/状态服务 |
+| `lib/app/state/settings_exclusive_state.dart`、`lib/pages/settings/exclusive_audio_settings_page.dart` | 「音频独占」设置页与状态 |
+| `lib/app/services/battery_guard.dart` | 播放时电池优化豁免（保活） |
+| 播放引擎改造 | `player_engine.dart` / `playback_router.dart` / `player_service.dart` / `just_audio_engine.dart` / `media_kit_engine.dart` 等接入独占路由 |
+| Bug 修复（AI 完成） | 24bit MediaCodec 帧错位噪声（enc fix）、独占绕过 AudioFlinger 后的音量软件增益、Android 14+ PendingIntent 授权不弹窗、16KB 页对齐、underrun 诊断日志、ECHO-A 小尾巴爆音（6 处时钟/驱动互斥修复） |
+| `tools/` | 多 DAC 轮换压测与校验脚本（`dac_stress.py` 等） |
+| 调试档案 | `HANDOFF.md` / `PROJECT_STATE.md` / `VERIFY_WORKLOG.md` / `VERIFY_WORKLOG_G3.md` |
+| 文档与模板 | 本声明块、更新状态、Issue 模板 |
+
+**除上表以外的功能与代码均属原作者（kuilei0926 及其上游项目们）**，AI 仅按其公开源码进行集成与修改。
+
+### 📦 更新状态
+
+| 日期 | 内容 |
+| --- | --- |
+| 2026-09-26 | ECHO-A DAC 爆音修复（时钟 SET_CUR 44100 wIndex hack + 双驱动互殴三连修，6 处）；**bit-perfect 实测 PASS**（12.51s 音乐逐字节采集 0 失真 0 削波 0 咔哒）；多 DAC 压测脚本 `tools/dac_stress.py` 落地 |
+| 2026-09-25 | 24bit 噪声/啸叫根因修复（MediaCodec `pcm-encoding` 帧错位，declared=21 actual=2）；独占音量键修复（UacSink 软件增益）；Android 14+ USB 授权不弹窗修复（PendingIntent 显式化，小米15 验证）；16KB 页对齐（0/7 复检）；DaiLing G3 六连 bug 修复 |
+| 2026-09-24 | USB 独占核心落地（用户态 UAC 驱动 + 协商 + enc fix），真机 ECHO-A bit-perfect PASS（44.1k/16bit 真失真 0 字节） |
+
+### 🐛 已知问题（当前）
+
+1. **开播/切歌瞬间偶发卡顿**：开播瞬间 underrun 爆发（已定位到 ring 补零路径，稳态播放 26.7s 采集 0 underrun 0 静音），暂未根治。
+2. **独占模式与「转码推流」「在线匹配/DLNA」互斥**：独占开启时转码开关被强制关闭（设计如此，bit-perfect 优先）。
+3. debug 包尚未签名 release；多 DAC 换机压测未完成（ECHO-A、戴灵 G3 已过；脚本就绪等硬件）。
+
+### 💬 欢迎反馈
+
+- **遇到 bug 请开 Issue**（请用「Bug 反馈」模板，附机型 / Android 版本 / DAC 型号 / logcat 的 `UsbUacOutput`、`UsbDeviceFinder` 标签日志）。
+- 功能建议、不同 DAC 的兼容性反馈同样欢迎。开发者本人也在用，会持续跟进。
+
+---
+
+
+# FeiNiuMusic
+
+飞牛私有云（FNOS）平台的第三方音乐客户端。通过飞牛 NAS 自带的音乐服务 API获取音乐库、播放流和歌词数据，提供完整的在线音乐播放体验。
+
+基于 [NagoMusic](https://github.com/Keduoli03/NagoMusic) 项目深度魔改适配。
+
+## 功能
+
+### 连接与账号
+
+- **飞牛 NAS 音乐服务对接** — 通过 FNOS 音乐 API 登录、获取歌曲 / 专辑 / 歌手 / 歌单 / 风格
+- **FN Connect 连接** — 支持 FNID 自动探测连接，内网/公网 IPv4/IPv6/中继多层链路探测，断线自动重连
+- **多账号管理** — 保存并切换多个飞牛账号，激活账号状态全局同步
+
+### 播放能力
+
+- **在线播放** — 从 NAS 直接获取音频流，支持随机漫游播放
+- **双播放器架构** — 系统解码优先，FFmpeg 兜底（`media_kit`），支持 FLAC / DSF 等无损格式
+- **DLNA 投屏** — 播放页右上角一键投屏到局域网 DLNA 设备（电视/音响），投屏后手机端遥控播放/暂停/进度/音量；无损格式自动转码为 MP3 投屏（Android）
+- **CUE 整轨支持** — 按 CUE 索引拆分整轨专辑，定位到曲目起播位置
+- **播放历史** — 记录与浏览播放历史
+- **定时音量** — 在设定时间段内自动把音量强制到设定值
+- **启动自动打开播放界面** — 可配置启动软件后直接进入播放页
+
+### 歌词与通知
+
+- **歌词展示** — LRC 歌词（含翻译行解析）与歌曲联动
+- **车载蓝牙歌词** — 通过 AVRCP TITLE 向车载系统传输当前歌词行
+- **状态栏歌词** — 支持魅族 / Lyricon 可选方案
+- **媒体通知** — 通知栏播放控制，使用本地封面（携带 Cookie 认证的封面无法直连，自动换用缓存文件）
+- **切歌通知弹窗** — 切歌时应用内弹出「正在播放」卡片（封面 + 歌名 + 歌手），可设置提示时长（2–10s），平板/TV 下卡片自动放大且倍数可调（1.0–3.0×），支持手动关闭
+
+### 通知歌词灵动岛
+
+在系统灵动岛显示当前歌词行，支持两种工作模式（设置 → 歌词设置 → 通知歌词灵动岛）：
+
+| 模式 | 说明 | 要求 | 支持机型 |
+| :--- | :--- | :--- | :--- |
+| **实时通知（实况通知）** | 走系统标准实时通知接口上岛，无 root / Shizuku | Android 16+；HyperOS 需 3.0.300+ | 小米 HyperOS（3.0.300，已验证）；ColorOS、OneUI、AOSP（社区支持） |
+| **焦点通知** | 走 MIUI 焦点通知上岛，系统渲染歌词卡片（OS2 模板与 OS3 超级岛模板不同） | HyperOS 2/OS2 起支持 | HyperOS 设备（需加入焦点通知白名单，或开启 Shizuku 绕过） |
+
+- **Shizuku 绕过白名单** — 未加入系统焦点通知白名单的应用，可通过授权 Shizuku 并开启「Shizuku 绕过白名单」临时绕过限制：发送焦点通知时短暂拦截 XMSF 网络，使系统无法向小米服务端校验白名单。注意可能导致耗电增加或消息延迟。
+
+> 低于 Android 16 或 HyperOS 2 的系统不支持原生动态歌词（实时通知需 Android 16+；焦点通知需 HyperOS 2/OS2+）。
+
+### 按设备能力自动隐藏开关
+
+设置页会根据当前设备的能力自动显示/隐藏通知类型开关（对齐小米焦点通知官方文档）：
+
+- **实时通知** 仅在 Android 16+（API 36+）设备上显示；
+- **焦点通知** 当焦点通知协议版本 ≥ 2（`notification_focus_protocol`，OS2 / OS3，两版模板不同）+ 应用焦点通知权限已开启（`canShowFocus`）时显示（OS3 的岛渲染能力 `persist.sys.feature.island` 不影响焦点通知可用性）；
+- 两种模式都不可用的设备（如旧版 Android / 非小米且非 Android 16）不显示「通知歌词灵动岛」区块；
+- 已保存的通知类型在设备上不可用时，自动回退到可用的默认类型（优先实时通知）。
+
+> 注：`focusPermission`（`canShowFocus`）探测是耗时操作，仅在进入歌词设置页时执行一次并缓存。
+
+### 浏览与管理
+
+- **搜索** — 全局搜索歌曲、专辑、歌手
+- **收藏与管理** — 收藏歌曲、创建/编辑歌单
+- **文件夹视图** — 按 NAS 文件系统目录层级浏览音乐（配合服务端增强应用）：目录树 + 面包屑导航、排序（文件名/创建时间/时长/大小）、随机播放、分页加载更多、CUE 整轨按曲目拆分展示、递归搜索当前目录树、平铺视图（一键展示当前目录及子文件夹全部歌曲）、长按歌曲详情与多选管理
+- **数据匹配（服务端增强数据源）** — 配合运行在 NAS 上的 [FnMusicEnhance](https://github.com/kuilei0926/FnMusicEnhance)（端口 38200）提供多平台歌曲信息/歌词/封面搜索（网易云 / QQ / 酷狗 / 汽水 / Apple）：在歌曲信息编辑页**一键匹配**歌曲信息，或歌曲页多选后**批量匹配**（服务端全自动写入歌手/歌词/专辑/封面）；支持**批量刷新**（全部歌曲信息 / 歌手图片 / 专辑图片，替换封面时删除旧图）；歌词支持**逐字（卡拉OK）**渲染（QQ/酷狗/汽水逐字源）；设置页可维护搜索平台（启用 / 排序，由客户端决定，服务端按客户端排序分组）与匹配偏好（歌词模式 / 简繁转换 / 过滤规则 / 并发）
+- **服务端增强（FnMusicEnhance）** — 配合运行在 NAS 上的[增强应用](https://github.com/kuilei0926/FnMusicEnhance)（端口 38200）：歌词修改（歌曲信息编辑页直接读写歌词）、歌手/专辑编辑（改名 + 封面写入）、文件夹视图、数据源搜索 / 批量匹配 / 批量刷新；设置页可检测连接状态（区分「未安装」与「已安装但不可达」），认证使用飞牛音乐登录 token，无需单独配置密钥
+
+### 界面与适配
+
+- **播放器** — 全屏播放器与歌词页切换，底部控制栏，迷你播放器
+- **主题与外观** — 动态渐变背景、主题模式切换、播放器样式可选
+- **平板模式** — 大屏桌面式布局（侧栏 + 自适应排版）
+- **TV 模式** — 自动检测 Android TV（系统权威信号 + 纯 Dart 启发式回退），切换 TV 布局与遥控器方向键焦点导航；播放页、设置页、切歌卡片等均接入遥控操作；支持在设置中手动强制开启预览
+- **TV 扫码登录** — 局域网配对 HTTP 服务 + 二维码扫码凭据自动登录
+- **听歌统计** — 记录播放时长与次数统计
+
+## 与上游 NagoMusic 的差异
+
+- 从通用 WebDAV/本地播放器改造为飞牛 NAS 专属音乐客户端
+- 对接 FNOS 音乐服务 API，使用 Cookie 认证
+- 引入双播放器架构（系统解码 + FFmpeg 兜底），扩展无损格式支持
+- 新增 TV / 平板自适应布局与遥控器焦点导航
+- 净化和精简上游冗余代码，适配飞牛场景
+
+## 适用平台
+
+- **Android**（手机 / 平板 / Android TV / Android Auto 车机）—— 完整能力：播放、媒体通知 / 灵动岛歌词 / 状态栏歌词等系统级功能
+- **Windows 桌面端** —— 联网能力：数据匹配 / 批量匹配 / 批量刷新 / 文件夹视图 / 歌词读写等服务端增强功能（需配合 NAS 上的 FnMusicEnhance）
+
+## Android Auto 支持
+
+飞牛音乐通过 `audio_service` 注册系统 MediaSession / MediaBrowserService，
+支持在 Android Auto（手机投屏）与 Android Automotive OS（车机版）上显示和控制播放：
+
+- **启动器可见**：应用启动即注册媒体会话，Android Auto 启动器可直接发现本应用
+- **正在播放卡片**：显示封面、歌名、歌手、专辑与进度，支持上一首 / 播放暂停 / 下一首 / 拖动进度
+- **队列列表**：点按队列中的曲目可直接切歌
+- **通知联动**：通知栏与车机共用同一媒体会话，自定义按键（收藏 / 关闭）同步生效
+
+### 测试方式
+
+1. 手机安装本应用，并安装 Android Auto 应用
+2. 通过数据线连接支持 Android Auto 的车机（或使用 Android Auto 模拟器）
+3. 在车机启动器中选择「飞牛音乐」
+
+## 界面预览
+
+<table>
+  <tr>
+    <th>首页</th>
+    <th>侧边栏</th>
+  </tr>
+  <tr>
+    <td><img src="开发文档/home.jpg" width="220" /></td>
+    <td><img src="开发文档/sidemenu.jpg" width="220" /></td>
+  </tr>
+  <tr>
+    <th>播放器</th>
+    <th>歌词</th>
+  </tr>
+  <tr>
+    <td><img src="开发文档/player.jpg" width="220" /></td>
+    <td><img src="开发文档/lyric.jpg" width="220" /></td>
+  </tr>
+</table>
+
+## 从源码构建
+
+### 前置条件
+
+- Flutter SDK（见 `pubspec.yaml` 中 `environment.sdk` 版本要求）
+- Android SDK（API 34+）
+- JDK 17+
+
+### 获取依赖
+
+```bash
+flutter pub get
+```
+
+### 调试运行
+
+连接 Android 设备或启动模拟器后，执行以下命令即可在设备上以调试模式启动应用：
+
+```bash
+flutter run
+```
+
+如需指定目标设备，先通过 `flutter devices` 查看已连接的设备，然后使用 `-d` 参数：
+
+```bash
+flutter devices          # 查看设备列表
+flutter run -d 设备ID    # 在指定设备上运行
+```
+
+### 运行测试
+
+```bash
+flutter test             # 单元测试 + Widget 测试
+flutter analyze          # 静态分析
+```
+
+### 构建发布版 APK
+
+```bash
+# 1. 配置签名（发布版必需）
+#    参考 android/key.properties.example 创建 android/key.properties
+#    并将 release.keystore 放到 android/app/ 目录下
+
+# 2. 构建 APK（按 CPU 架构拆分）
+flutter build apk --release --split-per-abi
+```
+
+### 构建 Windows 桌面版
+
+```bash
+flutter build windows --release
+```
+
+> Windows 桌面版支持数据匹配 / 批量匹配 / 批量刷新 / 文件夹视图等服务端增强能力（需 NAS 上运行 FnMusicEnhance），媒体通知 / 灵动岛等系统级功能仍为 Android 专属。
+
+构建产物位于 `build/app/outputs/flutter-apk/`，按 CPU 架构（arm64-v8a / armeabi-v7a / x86_64）拆分。
+
+## 鸿蒙 / iQOO / VIVO 音乐兼容包（非官方）
+
+某些手机系统（鸿蒙 4 / 鸿蒙 6、iQOO、VIVO）在系统播控中心（控制中心右上角的
+媒体卡片）里，默认只对系统「白名单」内的音乐应用显示 **音频控制按钮**。
+第三方音乐应用即使正常播放，也不显示入口。
+
+为解决该问题（参考
+[lx-music-mobile issue #908](https://github.com/lyswhut/lx-music-mobile/issues/908)），
+本项目额外提供一种 **兼容安装包**：该包的 **Android 包名（applicationId）被
+覆盖为 `com.luna.music`**，从而让系统将应用识别为受支持的音乐应用来源。
+
+### ⚠️ 非官方声明与法律风险
+
+请在使用该兼容包前仔细阅读以下内容：
+
+- **非官方安装包**：该包不是官方发布的汽水音乐版本。它是为解决特定机型音乐控制问题而生成的改装包，与系统正式包
+  （`com.feiniu.music`）可以共存安装，但功能与行为以本仓库源码为准。
+- **包名冲突风险**：`com.luna.music` 是字节跳动旗下「汽水音乐」App 使用的包名。
+  安装本兼容包后：
+  - 若设备上**已安装汽水音乐**，安装本包需要先卸载汽水音乐；
+    反之，已安装本包时再安装汽水音乐需要卸载本包。
+  - 系统通知、媒体卡片、快捷图标等会**共用同一套包名身份**，可能造成混淆。
+  - 因覆盖导致的原应用数据丢失，本项目不承担任何责任。
+- **品牌与商标风险**：本兼容包与汽水音乐 / 字节跳动、以及任何其他使用
+  `com.luna.music` 或 `luna` 标识的软件**均无任何关联、授权或赞助关系**。冒用
+  第三方包名可能涉及商标、不正当竞争等法律风险，请您自行评估后谨慎使用，本项目
+  不对由此产生的任何后果负责。
+- **卸载方式**：卸载该兼容包等同于卸载一个以 `com.luna.music` 为包名的应用，
+  不会影响正式包（`com.feiniu.music`）的数据。
+
+### 如何区分两个安装包
+
+| 安装包 | 包名（applicationId） | 适用 |
+| --- | --- | --- |
+| `FeiNiuMusic-vX.Y.Z-arm64-v8a.apk` | `com.feiniu.music`（正式） | 常规设备，飞牛音乐正式包（arm64） |
+| `FeiNiuMusic-vX.Y.Z-armeabi-v7a.apk` | `com.feiniu.music`（正式） | 常规设备，飞牛音乐正式包（32 位） |
+| `FeiNiuMusic-vX.Y.Z-x86_64.apk` | `com.feiniu.music`（正式） | 常规设备，飞牛音乐正式包（x86_64） |
+| `FeiNiuMusic-vX.Y.Z-z-luna-arm64-v8a.apk` | `com.luna.music`（音乐控制兼容，非官方） | 鸿蒙 4/6、iQOO、VIVO 汽水音频控制问题（仅 arm64） |
+
+四个安装包可以同时安装、互不影响数据；不确定时请安装正式包。
+
+## 开源协议
+
+本项目基于上游 [NagoMusic](https://github.com/Keduoli03/NagoMusic) 项目的开源协议发布。
+
+音乐数据匹配功能移植自 [Lyrico](https://github.com/Replica0110/Lyrico)（[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)）：
+- 歌词格式（逐字 / 增强逐字 / 逐行 / TTML，含翻译、罗马音）对齐 Lyrico 的 `LrcDocumentFormat`；
+- 后端数据源搜索逻辑移植自 [musicdl](https://github.com/CharlesPikachu/musicdl)（在 FnMusicEnhance 中实现）。
+
+## 致谢
+
+- [NagoMusic](https://github.com/Keduoli03/NagoMusic) — 本项目的基础
+- [Lyrico](https://github.com/Replica0110/Lyrico) — 音乐数据匹配 / 歌词格式（Apache-2.0）
+- [musicdl](https://github.com/CharlesPikachu/musicdl) — 后端数据源搜索代码来源
+- [HyperLyric](https://github.com/limczhh/HyperLyric) — 焦点通知 / 灵动岛 API 及 Shizuku 绕过白名单实现等移植来源

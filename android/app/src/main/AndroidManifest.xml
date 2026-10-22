@@ -1,0 +1,189 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- DLNA 投屏（media_cast_dlna / jUPnP）：SSDP 组播发现需要 WiFi 状态
+         与组播锁权限。插件 manifest 已自带，此处显式声明保证合并一致。 -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Android 13+ 本地网络发现：SSDP 组播需 NEARBY_WIFI_DEVICES 运行时权限。 -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 16「实时动态」提升通知权限：setRequestPromotedOngoing(true)
+         请求把 ongoing 通知提升为状态栏胶囊/灵动岛卡片时，系统会校验本权限。
+         HyperOS 3 通知设置里的「实时动态」开关即由此权限驱动；无此权限时
+         提升请求被忽略，实时通知只会落成普通通知而无法上岛。
+         对齐 HyperLyric（其 manifest 声明了本权限）。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <!-- 后台播放保护（audio_service FAQ 对 OEM 的标准处方）：请求电池优化
+         豁免，MIUI 不豁免会在切后台 ~45s 冻结进程导致后台无声（2026-09-26 实锤）。 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <application
+        android:label="${appLabel}"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:banner="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true"
+        android:enableOnBackInvokedCallback="true">
+        <meta-data android:name="lyricon_module" android:value="true" />
+        <meta-data android:name="lyricon_module_author" android:value="FeiNiuMusic" />
+        <meta-data android:name="lyricon_module_description" android:value="FeiNiuMusic Lyricon Provider" />
+        <!-- Android Automotive OS（车机版）媒体应用身份：让车机 App 库
+             识别本应用为媒体应用。手机投屏 Android Auto 不需要此项。 -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:enableOnBackInvokedCallback="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- 音乐应用身份（AOSP 标准）：CATEGORY_APP_MUSIC 是 Android 定义
+                 "音乐应用" 的官方机制（Intent.java 注释：Used with ACTION_MAIN to
+                 launch the music application）。系统 / MIUI / ColorOS 的默认音乐
+                 选择器据此枚举候选。含 ACTION_MUSIC_PLAYER 兼容旧 ROM。
+                 MainActivity 为此类入口时自带 FLAG_ACTIVITY_NEW_TASK。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <action android:name="android.intent.action.MUSIC_PLAYER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- 音乐应用身份（能力补充）：能打开 / 接收音频文件。部分 ROM 的
+                 默认音乐选择器也认"能否处理 audio/*"。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <!-- Android TV Leanback 启动入口：同一 Activity 出现在 TV 启动器。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
+        <!-- audio_service: foreground service hosting the MediaSession. Must be
+             exported with the MediaBrowserService intent-filter so the system
+             media controls / Android Auto / Assistant can bind and route actions. -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback"
+            tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <!-- Album art is copied into a dedicated cache and exposed as a
+             read-only content URI. Android Auto/AAOS run outside this app
+             process and therefore cannot read app-private file:// paths. -->
+        <provider
+            android:name=".CoverArtContentProvider"
+            android:authorities="${applicationId}.coverart"
+            android:exported="true"
+            android:grantUriPermissions="false" />
+
+        <!-- audio_service: receives MEDIA_BUTTON broadcasts (Bluetooth/headset
+             keys and, on OEM ROMs like Meizu Flyme, the notification's
+             play/pause/skip buttons). Without this the notification controls do
+             nothing on those ROMs. -->
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true"
+            tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+        <!-- image_cropper (uCrop) — required for the "自定义背景" crop screen -->
+        <activity
+            android:name="com.yalantis.ucrop.UCropActivity"
+            android:screenOrientation="portrait"
+            android:theme="@style/AppTheme.UCrop" />
+        <!-- Shizuku：为「焦点通知绕过白名单」提供运行环境（Sui/Shizuku 需此
+             Provider 完成初始化）。authorities 随 applicationId（正式包
+             com.feiniu.music.shizuku / 汽水兼容包 com.luna.music.shizuku）。 -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+        <!-- DLNA 投屏：jUPnP 的 Android UPnP 服务（SSDP 组播发现 + SOAP 控制）。
+             插件 manifest 已自带，此处显式声明保证与 permission 合并一致。 -->
+        <service
+            android:name="org.jupnp.android.AndroidUpnpServiceImpl"
+            android:exported="false"
+            tools:ignore="Instantiatable" />
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- Legacy storage permissions only apply up to Android 12 (API 32). On 13+
+         READ_MEDIA_AUDIO replaces them and WRITE_EXTERNAL_STORAGE is ignored. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- TV 支持声明：required=false 保持手机/平板可安装；
+         Play / Google TV 据此将应用识别为 TV 应用并允许 Leanback 启动器入口。 -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <!-- media_cast_dlna 插件 manifest 无条件声明 ACCESS_FINE/COARSE_LOCATION（Android 10
+         时代 SSDP 组播发现需要）。本项目在 API 33+ 用 NEARBY_WIFI_DEVICES 替代位置权限；
+         位置权限仅在 API 29-32（Android 10-12）的 SSDP 发现需要，故移除插件声明并在此
+         限定 maxSdkVersion=32 重新声明，避免 Play 商店把所有版本都归为位置权限应用。 -->
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="32"
+        tools:node="replace" />
+    <uses-permission
+        android:name="android.permission.ACCESS_COARSE_LOCATION"
+        android:maxSdkVersion="32"
+        tools:node="replace" />
+</manifest>
